@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BeamDrop P2P Transfer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --accent: #f59e0b;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --border-focus: #93c5fd;
+      --success: #10b981;
+      --danger: #ef4444;
+      --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+      --radius: 18px;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+    }
+    .app-container {
+      width: 100%;
+      max-width: 1080px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      flex: 1;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 24px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: var(--primary);
+    }
+    .brand i {
+      font-size: 1.5rem;
+      background: var(--primary-light);
+      padding: 10px;
+      border-radius: 12px;
+    }
+    .connection-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 30px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: #f1f5f9;
+      color: var(--text-muted);
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #cbd5e1;
+    }
+    .connected .status-dot {
+      background: var(--success);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    }
+    .connected {
+      background: #ecfdf5;
+      color: #065f46;
+    }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      flex: 1;
+    }
+    @media (min-width: 860px) {
+      .main-grid {
+        grid-template-columns: 360px 1fr;
+      }
+    }
+    .panel {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 20px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .panel-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .my-code-display {
+      background: var(--primary-light);
+      border: 1px dashed var(--border-focus);
+      border-radius: 14px;
+      padding: 16px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+    .code-number {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: 4px;
+      color: var(--primary);
+    }
+    .qr-container {
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      display: inline-block;
+    }
+    .connect-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .input-group {
+      display: flex;
+      gap: 8px;
+    }
+    input[type="number"], input[type="text"], textarea, select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--primary);
+    }
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 16px;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 0.95rem;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+    .btn-secondary {
+      background: #f1f5f9;
+      color: var(--text);
+    }
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+    .btn-accent {
+      background: var(--accent);
+      color: white;
+    }
+    .drop-zone {
+      border: 2px dashed var(--border);
+      background: #f8fafc;
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s, background-color 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+    .drop-zone i {
+      font-size: 2rem;
+      color: var(--primary);
+    }
+    .send-options {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .feed-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      flex: 1;
+      overflow-y: auto;
+      max-height: calc(100vh - 140px);
+      padding-right: 4px;
+    }
+    .feed-empty {
+      text-align: center;
+      padding: 40px 10px;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
+    .feed-empty i {
+      font-size: 2.5rem;
+      opacity: 0.4;
+    }
+    .feed-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      position: relative;
+      animation: fadeIn 0.3s ease forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .countdown-tag {
+      background: #fee2e2;
+      color: var(--danger);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .preview-box {
+      border-radius: 12px;
+      overflow: hidden;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      max-height: 480px;
+    }
+    .preview-box img {
+      max-width: 100%;
+      max-height: 480px;
+      object-fit: contain;
+    }
+    .preview-box video, .preview-box audio {
+      width: 100%;
+    }
+    .preview-box iframe {
+      width: 100%;
+      height: 350px;
+      border: none;
+      background: white;
+    }
+    .preview-text {
+      width: 100%;
+      max-height: 220px;
+      overflow-y: auto;
+      padding: 14px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #f8fafc;
+    }
+    .card-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .action-btn {
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      border-radius: 8px;
+    }
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 999;
+    }
+    .modal-content {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 24px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #scanner-container {
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .progress-bar-container {
+      width: 100%;
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 6px;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--primary);
+      transition: width 0.1s;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <header>
+      <div class="brand">
+        <i class="fa-solid fa-bolt"></i>
+        <span>BeamDrop</span>
+      </div>
+      <div id="connStatus" class="connection-status">
+        <span class="status-dot"></span>
+        <span id="connStatusText">Offline</span>
+      </div>
+    </header>
+
+    <div class="main-grid">
+      <aside class="panel">
+        <div class="panel-title">
+          <span>Connection Portal</span>
+          <button class="btn-secondary" style="padding: 6px 10px; font-size: 0.8rem;" id="refreshIdBtn" title="Regenerate Code">
+            <i class="fa-solid fa-rotate-right"></i>
+          </button>
+        </div>
+
+        <div class="my-code-display">
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Your Pairing Code</span>
+          <div id="myNumericCode" class="code-number">------</div>
+          <div id="qrcode" class="qr-container"></div>
+        </div>
+
+        <div class="connect-form">
+          <label style="font-size: 0.85rem; font-weight: 600;">Connect Remote Device</label>
+          <div class="input-group">
+            <input type="number" id="targetCodeInput" placeholder="Enter 6-digit code" />
+            <button class="btn-primary" id="connectBtn"><i class="fa-solid fa-link"></i></button>
+          </div>
+          <button class="btn-secondary" id="openScannerBtn"><i class="fa-solid fa-qrcode"></i> Scan QR Code</button>
+        </div>
+
+        <div class="send-options">
+          <label>Self-Destruct Timer</label>
+          <select id="autoDeleteDuration">
+            <option value="0">Never auto-delete</option>
+            <option value="30">30 seconds</option>
+            <option value="60">1 minute</option>
+            <option value="300">5 minutes</option>
+            <option value="600">10 minutes</option>
+          </select>
+        </div>
+
+        <div>
+          <div class="panel-title" style="margin-bottom: 12px;"><span>Share Message or Code</span></div>
+          <textarea id="directTextInput" rows="3" placeholder="Type text or HTML code to transfer directly..."></textarea>
+          <button class="btn-secondary" id="sendDirectTextBtn" style="width: 100%; margin-top: 8px;">
+            <i class="fa-solid fa-paper-plane"></i> Send Text
+          </button>
+        </div>
+      </aside>
+
+      <main class="panel">
+        <div class="panel-title">
+          <span>Live Shared Stream</span>
+          <span id="activePeerBadge" style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">No active peer</span>
+        </div>
+
+        <div id="dropZone" class="drop-zone">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+          <p style="font-weight: 600; font-size: 0.95rem;">Drag & drop any file here, or click to browse</p>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Audio, Video, HTML, Images, Documents</span>
+          <input type="file" id="fileInput" multiple style="display: none;">
+        </div>
+
+        <div id="progressContainer" class="progress-bar-container">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+
+        <div id="feedList" class="feed-container">
+          <div class="feed-empty" id="feedEmptyState">
+            <i class="fa-solid fa-inbox"></i>
+            <p>No transmissions yet. Pair a device to start exchanging files live.</p>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="scannerModal" class="modal-overlay">
+    <div class="modal-content">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-weight: 700; font-size: 1.1rem;">Scan Device QR</span>
+        <button id="closeScannerBtn" style="background: none; border: none; font-size: 1.2rem; cursor: pointer;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div id="scanner-container"></div>
+      <span style="font-size: 0.8rem; color: var(--text-muted); text-align: center;">Point your camera at another screen's pairing QR code.</span>
+    </div>
+  </div>
+
+  <script>
+    const CHUNK_SIZE = 64 * 1024;
+    const PEER_PREFIX = 'beamdrop-';
+    let peer = null;
+    let conn = null;
+    let myCode = '';
+    let html5QrScanner = null;
+    const incomingBuffers = {};
+
+    const connStatus = document.getElementById('connStatus');
+    const connStatusText = document.getElementById('connStatusText');
+    const myNumericCode = document.getElementById('myNumericCode');
+    const qrcodeContainer = document.getElementById('qrcode');
+    const targetCodeInput = document.getElementById('targetCodeInput');
+    const connectBtn = document.getElementById('connectBtn');
+    const openScannerBtn = document.getElementById('openScannerBtn');
+    const closeScannerBtn = document.getElementById('closeScannerBtn');
+    const scannerModal = document.getElementById('scannerModal');
+    const refreshIdBtn = document.getElementById('refreshIdBtn');
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const autoDeleteDuration = document.getElementById('autoDeleteDuration');
+    const directTextInput = document.getElementById('directTextInput');
+    const sendDirectTextBtn = document.getElementById('sendDirectTextBtn');
+    const feedList = document.getElementById('feedList');
+    const feedEmptyState = document.getElementById('feedEmptyState');
+    const activePeerBadge = document.getElementById('activePeerBadge');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+
+    function generateSixDigitCode() {
+      return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    function initPeer(customCode = null) {
+      if (peer) {
+        peer.destroy();
+      }
+      myCode = customCode || generateSixDigitCode();
+      myNumericCode.textContent = myCode;
+      
+      qrcodeContainer.innerHTML = '';
+      new QRCode(qrcodeContainer, {
+        text: myCode,
+        width: 110,
+        height: 110,
+        colorDark: "#0f172a",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+
+      peer = new Peer(PEER_PREFIX + myCode);
+
+      peer.on('open', (id) => {
+        updateConnectionState(false);
+      });
+
+      peer.on('connection', (incomingConn) => {
+        setupConnection(incomingConn);
+      });
+
+      peer.on('error', (err) => {
+        console.error('Peer error: ', err);
+        if (err.type === 'unavailable-id') {
+          initPeer();
+        }
+      });
+    }
+
+    function setupConnection(connection) {
+      if (conn) {
+        conn.close();
+      }
+      conn = connection;
+
+      conn.on('open', () => {
+        updateConnectionState(true, conn.peer.replace(PEER_PREFIX, ''));
+      });
+
+      conn.on('data', (payload) => {
+        handleIncomingPayload(payload);
+      });
+
+      conn.on('close', () => {
+        updateConnectionState(false);
+      });
+
+      conn.on('error', () => {
+        updateConnectionState(false);
+      });
+    }
+
+    function updateConnectionState(isConnected, remoteCode = '') {
+      if (isConnected) {
+        connStatus.classList.add('connected');
+        connStatusText.textContent = 'Paired';
+        activePeerBadge.textContent = 'Linked to: ' + remoteCode;
+      } else {
+        connStatus.classList.remove('connected');
+        connStatusText.textContent = 'Waiting';
+        activePeerBadge.textContent = 'No active peer';
+      }
+    }
+
+    connectBtn.addEventListener('click', () => {
+      const target = targetCodeInput.value.trim();
+      if (!target || target.length !== 6) {
+        alert('Enter a valid 6-digit numeric code.');
+        return;
+      }
+      const outgoing = peer.connect(PEER_PREFIX + target, { reliable: true });
+      setupConnection(outgoing);
+    });
+
+    refreshIdBtn.addEventListener('click', () => {
+      initPeer();
+    });
+
+    openScannerBtn.addEventListener('click', () => {
+      scannerModal.style.display = 'flex';
+      html5QrScanner = new Html5Qrcode('scanner-container');
+      html5QrScanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        (decodedText) => {
+          stopScanner();
+          targetCodeInput.value = decodedText;
+          connectBtn.click();
+        },
+        () => {}
+      ).catch(() => {
+        alert('Camera access denied or unavailable.');
+        stopScanner();
+      });
+    });
+
+    function stopScanner() {
+      if (html5QrScanner) {
+        html5QrScanner.stop().then(() => {
+          html5QrScanner.clear();
+          scannerModal.style.display = 'none';
+        }).catch(() => {
+          scannerModal.style.display = 'none';
+        });
+      } else {
+        scannerModal.style.display = 'none';
+      }
+    }
+
+    closeScannerBtn.addEventListener('click', stopScanner);
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) {
+        handleFiles(e.dataTransfer.files);
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length) {
+        handleFiles(e.target.files);
+      }
+    });
+
+    function handleFiles(files) {
+      if (!conn || !conn.open) {
+        alert('Pair with a remote device first before sending files.');
+        return;
+      }
+      Array.from(files).forEach((file) => sendFileInChunks(file));
+      fileInput.value = '';
+    }
+
+    function sendFileInChunks(file) {
+      const fileId = Math.random().toString(36).substr(2, 9);
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const timerVal = parseInt(autoDeleteDuration.value, 10);
+
+      conn.send({
+        type: 'start',
+        id: fileId,
+        name: file.name,
+        size: file.size,
+        mime: file.type || 'application/octet-stream',
+        totalChunks: totalChunks,
+        timer: timerVal
+      });
+
+      let currentChunk = 0;
+      progressContainer.style.display = 'block';
+
+      const fileReader = new FileReader();
+      fileReader.onload = (e) => {
+        conn.send({
+          type: 'chunk',
+          id: fileId,
+          index: currentChunk,
+          data: e.target.result
+        });
+        currentChunk++;
+        const percent = Math.floor((currentChunk / totalChunks) * 100);
+        progressBar.style.width = percent + '%';
+
+        if (currentChunk < totalChunks) {
+          readSlice(currentChunk);
+        } else {
+          progressBar.style.width = '0%';
+          progressContainer.style.display = 'none';
+          
+          addMessageToFeed({
+            title: file.name,
+            size: formatBytes(file.size),
+            type: file.type || 'application/octet-stream',
+            blob: file,
+            timer: timerVal,
+            isSender: true
+          });
+        }
+      };
+
+      function readSlice(idx) {
+        const start = idx * CHUNK_SIZE;
+        const end = Math.min(file.size, start + CHUNK_SIZE);
+        fileReader.readAsArrayBuffer(file.slice(start, end));
+      }
+
+      readSlice(0);
+    }
+
+    sendDirectTextBtn.addEventListener('click', () => {
+      const text = directTextInput.value.trim();
+      if (!text) return;
+      if (!conn || !conn.open) {
+        alert('Pair with a remote device first before sending text.');
+        return;
+      }
+      const timerVal = parseInt(autoDeleteDuration.value, 10);
+      const isHtml = /<\/?[a-z][\s\S]*>/i.test(text);
+      const payload = {
+        type: 'text',
+        data: text,
+        isHtml: isHtml,
+        timer: timerVal
+      };
+      conn.send(payload);
+
+      addMessageToFeed({
+        title: isHtml ? 'Renderable HTML Document' : 'Text Transmission',
+        text: text,
+        isHtml: isHtml,
+        timer: timerVal,
+        isSender: true
+      });
+
+      directTextInput.value = '';
+    });
+
+    function handleIncomingPayload(payload) {
+      if (payload.type === 'start') {
+        incomingBuffers[payload.id] = {
+          name: payload.name,
+          mime: payload.mime,
+          size: payload.size,
+          totalChunks: payload.totalChunks,
+          receivedChunks: 0,
+          timer: payload.timer,
+          chunks: []
+        };
+      } else if (payload.type === 'chunk') {
+        const fileRecord = incomingBuffers[payload.id];
+        if (!fileRecord) return;
+        fileRecord.chunks[payload.index] = payload.data;
+        fileRecord.receivedChunks++;
+
+        if (fileRecord.receivedChunks === fileRecord.totalChunks) {
+          const combinedBlob = new Blob(fileRecord.chunks, { type: fileRecord.mime });
+          addMessageToFeed({
+            title: fileRecord.name,
+            size: formatBytes(fileRecord.size),
+            type: fileRecord.mime,
+            blob: combinedBlob,
+            timer: fileRecord.timer,
+            isSender: false
+          });
+          delete incomingBuffers[payload.id];
+        }
+      } else if (payload.type === 'text') {
+        addMessageToFeed({
+          title: payload.isHtml ? 'Renderable HTML Document' : 'Text Transmission',
+          text: payload.data,
+          isHtml: payload.isHtml,
+          timer: payload.timer,
+          isSender: false
+        });
+      }
+    }
+
+    function addMessageToFeed(item) {
+      if (feedEmptyState) {
+        feedEmptyState.style.display = 'none';
+      }
+
+      const card = document.createElement('div');
+      card.className = 'feed-card';
+
+      const meta = document.createElement('div');
+      meta.className = 'card-meta';
+      
+      const metaInfo = document.createElement('span');
+      metaInfo.textContent = (item.isSender ? 'Outgoing: ' : 'Received: ') + item.title + (item.size ? ' (' + item.size + ')' : '');
+      meta.appendChild(metaInfo);
+
+      let countdownTimerInterval = null;
+      if (item.timer > 0) {
+        let remaining = item.timer;
+        const countSpan = document.createElement('span');
+        countSpan.className = 'countdown-tag';
+        countSpan.innerHTML = '<i class="fa-regular fa-clock"></i> <span class="sec-display">' + remaining + 's</span>';
+        meta.appendChild(countSpan);
+
+        countdownTimerInterval = setInterval(() => {
+          remaining--;
+          const secText = countSpan.querySelector('.sec-display');
+          if (secText) secText.textContent = remaining + 's';
+          if (remaining <= 0) {
+            clearInterval(countdownTimerInterval);
+            card.remove();
+            if (feedList.querySelectorAll('.feed-card').length === 0 && feedEmptyState) {
+              feedEmptyState.style.display = 'flex';
+            }
+          }
+        }, 1000);
+      }
+
+      card.appendChild(meta);
+
+      const previewBox = document.createElement('div');
+      previewBox.className = 'preview-box';
+
+      const actions = document.createElement('div');
+      actions.className = 'card-actions';
+
+      if (item.blob) {
+        const fileUrl = URL.createObjectURL(item.blob);
+        const mime = item.type;
+
+        if (mime.startsWith('image/')) {
+          const img = document.createElement('img');
+          img.src = fileUrl;
+          img.alt = item.title;
+          previewBox.appendChild(img);
+        } else if (mime.startsWith('video/')) {
+          const video = document.createElement('video');
+          video.src = fileUrl;
+          video.controls = true;
+          video.preload = 'metadata';
+          previewBox.appendChild(video);
+        } else if (mime.startsWith('audio/')) {
+          const audio = document.createElement('audio');
+          audio.src = fileUrl;
+          audio.controls = true;
+          previewBox.appendChild(audio);
+        } else if (mime === 'text/html' || item.title.endsWith('.html')) {
+          const iframe = document.createElement('iframe');
+          iframe.sandbox = 'allow-scripts allow-same-origin';
+          iframe.src = fileUrl;
+          previewBox.appendChild(iframe);
+        } else {
+          const fallback = document.createElement('div');
+          fallback.style.padding = '24px';
+          fallback.style.textAlign = 'center';
+          fallback.innerHTML = '<i class="fa-solid fa-file-lines" style="font-size: 2rem; color: var(--text-muted); margin-bottom: 8px;"></i><p>' + item.title + '</p>';
+          previewBox.appendChild(fallback);
+        }
+
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'btn-primary action-btn';
+        downloadBtn.innerHTML = '<i class="fa-solid fa-download"></i> Download';
+        downloadBtn.onclick = () => {
+          const a = document.createElement('a');
+          a.href = fileUrl;
+          a.download = item.title;
+          a.click();
+        };
+        actions.appendChild(downloadBtn);
+
+        const openTabBtn = document.createElement('button');
+        openTabBtn.className = 'btn-secondary action-btn';
+        openTabBtn.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square"></i> Open Full View';
+        openTabBtn.onclick = () => window.open(fileUrl, '_blank');
+        actions.appendChild(openTabBtn);
+
+      } else if (item.text) {
+        if (item.isHtml) {
+          const iframe = document.createElement('iframe');
+          iframe.sandbox = 'allow-scripts';
+          iframe.srcdoc = item.text;
+          previewBox.appendChild(iframe);
+        } else {
+          const textContainer = document.createElement('div');
+          textContainer.className = 'preview-text';
+          textContainer.textContent = item.text;
+          previewBox.appendChild(textContainer);
+        }
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn-primary action-btn';
+        copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy Text';
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(item.text).then(() => {
+            copyBtn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
+            setTimeout(() => copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy Text', 2000);
+          });
+        };
+        actions.appendChild(copyBtn);
+      }
+
+      card.appendChild(previewBox);
+      card.appendChild(actions);
+      feedList.insertBefore(card, feedList.firstChild);
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initPeer();
+    });
+  </script>
+</body>
+</html>
