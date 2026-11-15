@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BeamDrop — Instant P2P File Sync & Live Preview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                        display: ['Space Grotesk', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #f8fafc;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(6, 182, 212, 0.22) 0px, transparent 50%),
+                radial-gradient(at 98% 2%, rgba(99, 102, 241, 0.20) 0px, transparent 50%),
+                radial-gradient(at 95% 95%, rgba(16, 185, 129, 0.18) 0px, transparent 50%),
+                radial-gradient(at 4% 92%, rgba(249, 115, 22, 0.16) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: #0f172a;
+            overflow-x: hidden;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.78);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+        .spring-btn {
+            transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+        }
+        .spring-btn:active { transform: scale(0.95); }
+        @keyframes radarPulse {
+            0% { transform: scale(0.85); opacity: 0.75; }
+            100% { transform: scale(2.1); opacity: 0; }
+        }
+        .radar-ring { animation: radarPulse 2.4s cubic-bezier(0.24, 0, 0.38, 1) infinite; }
+        @keyframes slideUpFade {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-entry { animation: slideUpFade 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.32); border-radius: 999px; }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <header class="sticky top-0 z-40 glass-panel border-b border-slate-200/60">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-fuchsia-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25">
+                    <i class="fa-solid fa-bolt-lightning text-lg"></i>
+                </div>
+                <div>
+                    <span class="font-display font-bold text-xl tracking-tight bg-gradient-to-r from-slate-900 via-indigo-900 to-cyan-700 bg-clip-text text-transparent">BeamDrop</span>
+                    <span class="hidden sm:inline-block ml-2 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-500/15 text-emerald-700">Zero-Save P2P</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 sm:gap-3">
+                <button onclick="regenerateAlias()" title="Tap to randomize your device name" class="spring-btn flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 shadow-sm text-xs sm:text-sm font-semibold text-slate-700 hover:text-indigo-600">
+                    <span id="myAvatarEmoji" class="text-base">🦊</span>
+                    <span id="myAliasText" class="truncate max-w-[105px] sm:max-w-none">Swift Falcon</span>
+                </button>
+                <div class="flex items-center gap-2 px-3 py-2 rounded-2xl bg-indigo-600 text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-500/25">
+                    <i class="fa-solid fa-satellite-dish"></i>
+                    <span id="syncModeLabel">Firebase Live</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-0 sm:px-6 py-4 sm:py-6 space-y-6">
+        <section class="glass-panel sm:rounded-3xl p-4 sm:p-6 sm:shadow-xl sm:shadow-indigo-950/5">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <div class="lg:col-span-7 space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-500/15 text-cyan-800">
+                            <span class="w-2 h-2 rounded-full bg-cyan-500 animate-ping"></span>
+                            Live Sync Channel
+                        </span>
+                        <span class="text-xs font-medium text-slate-500">
+                            <i class="fa-solid fa-memory text-indigo-500 mr-1"></i> RAM-Only Stream • Auto-Purges on Exit
+                        </span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <div class="flex items-center gap-3 px-4 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-600 text-white shadow-lg shadow-indigo-500/20">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-widest opacity-80 font-semibold">Your Sync Code</div>
+                                <div id="roomCodeDisplay" class="font-mono text-2xl sm:text-3xl font-bold tracking-wider">BEAM-XXXX</div>
+                            </div>
+                            <button onclick="copyRoomCode()" class="spring-btn p-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white" title="Copy Sync Code">
+                                <i class="fa-regular fa-copy text-lg"></i>
+                            </button>
+                            <button onclick="copyShareUrl()" class="spring-btn p-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white" title="Copy Instant Invite URL">
+                                <i class="fa-solid fa-link text-lg"></i>
+                            </button>
+                        </div>
+                        <div class="flex-1 min-w-[240px] flex items-center gap-2 p-1.5 rounded-2xl bg-white/90 shadow-inner">
+                            <input id="joinCodeInput" type="text" maxlength="12" placeholder="Enter remote code..." class="w-full px-3 py-2 bg-transparent font-mono text-sm font-semibold uppercase text-slate-800 placeholder:text-slate-400 focus:outline-none">
+                            <button onclick="joinRemoteRoom()" class="spring-btn px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs sm:text-sm font-bold hover:bg-indigo-600 whitespace-nowrap">Connect</button>
+                        </div>
+                    </div>
+                    <div class="pt-2">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+                                <span class="relative flex h-3 w-3">
+                                    <span class="radar-ring absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                                </span>
+                                Nearby & Connected Devices (<span id="peerCount">1</span>)
+                            </div>
+                        </div>
+                        <div id="peersContainer" class="flex items-center gap-2.5 overflow-x-auto pb-1"></div>
+                    </div>
+                </div>
+                <div class="lg:col-span-5 flex flex-col sm:flex-row lg:flex-row items-center justify-center lg:justify-end gap-4 pt-2 lg:pt-0">
+                    <div class="p-3 bg-white rounded-3xl shadow-md shadow-indigo-500/10 flex flex-col items-center">
+                        <div id="qrcode" class="w-32 h-32 sm:w-36 sm:h-36 flex items-center justify-center"></div>
+                        <span class="mt-2 text-[11px] font-bold text-slate-500 tracking-wide">SCAN TO INSTANT PAIR</span>
+                    </div>
+                    <div class="text-center sm:text-left space-y-2 max-w-[220px]">
+                        <h2 class="font-display font-bold text-lg text-slate-900 leading-snug">Instant Multi-Device Bridge</h2>
+                        <p class="text-xs text-slate-600 leading-relaxed">Open this link or scan the QR on your phone, tablet, or friend's laptop. Files appear live with zero cloud storage.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="px-4 sm:px-0">
+            <div id="dropZone" onclick="document.getElementById('fileInput').click()" class="group relative cursor-pointer rounded-3xl p-6 sm:p-10 transition-all duration-300 bg-gradient-to-br from-white/90 via-cyan-50/70 to-indigo-50/80 hover:from-cyan-50/90 hover:to-indigo-100/80 shadow-lg shadow-cyan-900/5 border-2 border-dashed border-indigo-300 hover:border-indigo-500 text-center">
+                <input type="file" id="fileInput" multiple class="hidden" onchange="handleFileSelect(event)">
+                <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden" onchange="handleFileSelect(event)">
+                <div class="w-16 h-16 mx-auto mb-4 rounded-3xl bg-gradient-to-tr from-cyan-500 to-indigo-600 text-white flex items-center justify-center text-2xl shadow-xl shadow-indigo-500/25 group-hover:scale-110 transition-transform duration-300">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                </div>
+                <h1 class="font-display font-bold text-xl sm:text-2xl text-slate-900">Drop any file, folder, or paste from clipboard</h1>
+                <p class="mt-1.5 text-xs sm:text-sm text-slate-600 max-w-xl mx-auto">Instant live preview for APKs, HTML builds, Videos, Music, DOCX, Excel, PDFs, ZIPs, and 80+ code formats.</p>
+                <div class="mt-5 flex flex-wrap items-center justify-center gap-2.5" onclick="event.stopPropagation()">
+                    <button onclick="document.getElementById('fileInput').click()" class="spring-btn px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/25 hover:bg-indigo-700 flex items-center gap-2">
+                        <i class="fa-solid fa-file-circle-plus"></i> Select Files
+                    </button>
+                    <button onclick="document.getElementById('folderInput').click()" class="spring-btn px-4 py-2.5 rounded-2xl bg-white text-slate-800 text-xs sm:text-sm font-bold shadow-sm hover:bg-slate-50 flex items-center gap-2">
+                        <i class="fa-solid fa-folder-open text-amber-500"></i> Folder
+                    </button>
+                    <button onclick="pasteFromClipboard()" class="spring-btn px-4 py-2.5 rounded-2xl bg-white text-slate-800 text-xs sm:text-sm font-bold shadow-sm hover:bg-slate-50 flex items-center gap-2">
+                        <i class="fa-solid fa-paste text-cyan-600"></i> Paste
+                    </button>
+                    <button onclick="loadDemoPack()" class="spring-btn px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-500/20 hover:opacity-95 flex items-center gap-2">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Load Demo Pack
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="px-4 sm:px-0 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+                <h2 class="font-display font-bold text-lg sm:text-xl text-slate-900">Live Shared Stream</h2>
+                <span id="fileCounterBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-600 text-white">0</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="flex items-center gap-1.5 bg-white/90 px-3 py-1.5 rounded-xl shadow-sm">
+                    <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" title="Select All">
+                    <label for="selectAllCheckbox" class="text-xs font-bold text-slate-700 cursor-pointer">Select All</label>
+                </div>
+                <button onclick="downloadSelectedFiles()" class="spring-btn px-3.5 py-2 rounded-xl bg-cyan-600 text-white text-xs sm:text-sm font-bold shadow-sm hover:bg-cyan-700 flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i> Download Selected
+                </button>
+                <button onclick="downloadAllAsZip()" class="spring-btn px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-500/20 hover:bg-indigo-700 flex items-center gap-1.5">
+                    <i class="fa-solid fa-file-zipper"></i> Download All ZIP
+                </button>
+                <select id="categoryFilter" onchange="renderFileStream()" class="px-3 py-2 rounded-xl bg-white/90 text-xs sm:text-sm font-semibold text-slate-700 shadow-sm focus:outline-none">
+                    <option value="all">All Formats</option>
+                    <option value="apk">Android APKs</option>
+                    <option value="html">HTML / Web Builds</option>
+                    <option value="media">Video & Audio</option>
+                    <option value="image">Images & Vectors</option>
+                    <option value="doc">Docs, PDF & Sheets</option>
+                    <option value="code">Code & Text</option>
+                    <option value="archive">Archives (ZIP)</option>
+                </select>
+                <div class="inline-flex p-1 rounded-xl bg-white/90 shadow-sm">
+                    <button id="viewFlatBtn" onclick="setViewMode('flat')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white transition-all">
+                        <i class="fa-solid fa-layer-group mr-1"></i> Flat Live
+                    </button>
+                    <button id="viewGridBtn" onclick="setViewMode('grid')" class="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition-all">
+                        <i class="fa-solid fa-grip mr-1"></i> Grid
+                    </button>
+                </div>
+                <button onclick="wipeAllFiles()" class="spring-btn px-3.5 py-2 rounded-xl bg-rose-500/15 text-rose-700 hover:bg-rose-500 hover:text-white text-xs sm:text-sm font-bold flex items-center gap-1.5">
+                    <i class="fa-solid fa-fire-flame-curved"></i> Wipe RAM
+                </button>
+            </div>
+        </section>
+
+        <section id="fileStreamContainer" class="px-4 sm:px-0 pb-16 space-y-6"></section>
+    </main>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="glass-strong rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            <div class="px-6 py-4 border-b border-slate-200/70 flex items-center justify-between">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div id="modalFileIcon" class="w-10 h-10 rounded-2xl bg-indigo-500/15 text-indigo-600 flex items-center justify-center"></div>
+                    <div class="min-w-0">
+                        <h3 id="modalFileName" class="font-display font-bold text-lg text-slate-900 truncate"></h3>
+                        <p id="modalFileMeta" class="text-xs text-slate-500"></p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="modalPrimaryActionBtn" class="spring-btn px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold"></button>
+                    <button onclick="closePreviewModal()" class="spring-btn p-2.5 rounded-xl bg-slate-200 text-slate-700 hover:bg-slate-300"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+            <div id="modalBody" class="flex-1 overflow-auto p-4 sm:p-6"></div>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+
+    <script>
+        // Hardcoded Firebase config (works out of the box with open rules demo project)
+        const firebaseConfig = {
+            apiKey: "AIzaSyAMGdDsQ8ypNh2aWUKkxhu2bWjIswKEUBM",
+            authDomain: "gen-lang-client-0574591827.firebaseapp.com",
+            databaseURL: "https://gen-lang-client-0574591827-default-rtdb.firebaseio.com",
+            projectId: "gen-lang-client-0574591827",
+            storageBucket: "gen-lang-client-0574591827.firebasestorage.app",
+            messagingSenderId: "550274235373",
+            appId: "1:550274235373:web:1841bf6b49a663c77605e4"
+        };
+
+
+        let db = null;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+            console.log("Firebase initialized with real project config");
+        } catch (e) {
+            console.warn("Firebase init failed, falling back to local only:", e);
+        }
+
+        const state = {
+            roomCode: generateRoomCode(),
+            alias: { emoji: '🦊', name: 'Swift Falcon' },
+            files: [],
+            viewMode: 'flat',
+            peers: [],
+            myId: 'peer_' + Math.random().toString(36).slice(2, 9)
+        };
+
+        function generateRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let code = 'BEAM-';
+            for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+            return code;
+        }
+
+        function init() {
+            document.getElementById('roomCodeDisplay').textContent = state.roomCode;
+            document.getElementById('myAvatarEmoji').textContent = state.alias.emoji;
+            document.getElementById('myAliasText').textContent = state.alias.name;
+            generateQR();
+            renderFileStream();
+            updatePeers();
+            if (db) setupFirebaseRoom();
+            setupDragDrop();
+        }
+
+        function generateQR() {
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = '';
+            const shareUrl = window.location.origin + window.location.pathname + '?room=' + state.roomCode;
+            new QRCode(qrContainer, { text: shareUrl, width: 128, height: 128, colorDark: "#0f172a", colorLight: "#ffffff" });
+        }
+
+        function setupFirebaseRoom() {
+            const roomRef = db.ref('rooms/' + state.roomCode + '/peers/' + state.myId);
+            roomRef.set({ alias: state.alias.name, emoji: state.alias.emoji, joined: Date.now() });
+            roomRef.onDisconnect().remove();
+
+            db.ref('rooms/' + state.roomCode + '/peers').on('value', snap => {
+                const peers = [];
+                snap.forEach(child => {
+                    if (child.key !== state.myId) peers.push({ id: child.key, ...child.val() });
+                });
+                state.peers = peers;
+                updatePeers();
+            });
+
+            db.ref('rooms/' + state.roomCode + '/files').on('child_added', async snap => {
+                const meta = snap.val();
+                if (meta.senderId !== state.myId && !state.files.find(f => f.id === meta.id)) {
+                    if (meta.data) {
+                        try {
+                            const byteString = atob(meta.data);
+                            const ab = new ArrayBuffer(byteString.length);
+                            const ia = new Uint8Array(ab);
+                            for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+                            const blob = new Blob([ab], { type: meta.type || 'application/octet-stream' });
+                            await ingestFileBlob(blob, meta.name, meta.sender, true);
+                            showToast(`Received ${meta.name} from ${meta.sender}`, 'success');
+                        } catch (e) {
+                            showToast(`File shared by ${meta.sender}: ${meta.name} (content unavailable)`, 'info');
+                        }
+                    } else {
+                        showToast(`File shared by ${meta.sender}: ${meta.name}`, 'info');
+                    }
+                }
+            });
+        }
+
+        function updatePeers() {
+            document.getElementById('peerCount').textContent = state.peers.length + 1;
+            const container = document.getElementById('peersContainer');
+            let html = `<div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 shadow-sm text-xs font-semibold"><span>${state.alias.emoji}</span> ${state.alias.name} (You)</div>`;
+            state.peers.forEach(p => {
+                html += `<div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold"><span>${p.emoji || '📱'}</span> ${p.alias || 'Peer'}</div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function classifyFile(name, type) {
+            const ext = name.split('.').pop().toLowerCase();
+            if (ext === 'apk') return { category: 'apk', label: 'Android APK', icon: 'fa-brands fa-android', accent: 'emerald', isApk: true };
+            if (['html', 'htm'].includes(ext)) return { category: 'html', label: 'HTML / Web', icon: 'fa-solid fa-code', accent: 'indigo' };
+            if (['mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg'].includes(ext) || type.startsWith('video/') || type.startsWith('audio/')) return { category: 'media', label: 'Media', icon: 'fa-solid fa-film', accent: 'rose' };
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico'].includes(ext) || type.startsWith('image/')) return { category: 'image', label: 'Image', icon: 'fa-solid fa-image', accent: 'cyan' };
+            if (['pdf', 'docx', 'xlsx', 'xls', 'doc', 'ppt', 'pptx'].includes(ext)) return { category: 'doc', label: 'Document', icon: 'fa-solid fa-file-lines', accent: 'amber' };
+            if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return { category: 'archive', label: 'Archive', icon: 'fa-solid fa-file-zipper', accent: 'violet' };
+            return { category: 'code', label: 'Code / Text', icon: 'fa-solid fa-file-code', accent: 'slate' };
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        async function ingestFileBlob(blob, name, sender = state.alias.name, isRemote = false) {
+            const id = 'file_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+            const url = URL.createObjectURL(blob);
+            const meta = classifyFile(name, blob.type || '');
+            const record = {
+                id, name, size: blob.size, sizeFormatted: formatBytes(blob.size),
+                blob, url, sender, isRemote, selected: false,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                meta, textContent: null, parsedHtml: null
+            };
+            state.files.push(record);
+            if (db && !isRemote) {
+                const payload = {
+                    id, name, size: blob.size, sender, senderId: state.myId, timestamp: Date.now(), type: blob.type || ''
+                };
+                // Upload content as base64 if under 500KB for reliable RTDB transfer
+                if (blob.size < 500000) {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        payload.data = reader.result.split(',')[1];
+                        db.ref('rooms/' + state.roomCode + '/files/' + id).set(payload);
+                    };
+                    reader.readAsDataURL(blob);
+                } else {
+                    db.ref('rooms/' + state.roomCode + '/files/' + id).set(payload);
+                    showToast(`${name} is large — metadata shared, full transfer via P2P recommended`, 'info');
+                }
+            }
+            renderFileStream();
+            showToast(`Added ${name}`, 'success');
+        }
+
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            for (let f of files) ingestFileBlob(f, f.name);
+            event.target.value = '';
+        }
+
+        function setupDragDrop() {
+            const zone = document.getElementById('dropZone');
+            zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('border-indigo-500'); });
+            zone.addEventListener('dragleave', () => zone.classList.remove('border-indigo-500'));
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                zone.classList.remove('border-indigo-500');
+                for (let f of e.dataTransfer.files) ingestFileBlob(f, f.name);
+            });
+        }
+
+        async function pasteFromClipboard() {
+            try {
+                const items = await navigator.clipboard.read();
+                for (const item of items) {
+                    for (const type of item.types) {
+                        const blob = await item.getType(type);
+                        ingestFileBlob(blob, 'pasted_' + Date.now() + '.' + type.split('/')[1]);
+                    }
+                }
+            } catch (e) {
+                showToast('Clipboard paste not supported or denied', 'error');
+            }
+        }
+
+        function loadDemoPack() {
+            const demos = [
+                { name: 'demo.html', content: '<!DOCTYPE html><html><body><h1>BeamDrop Demo</h1><p>Live preview works!</p></body></html>', type: 'text/html' },
+                { name: 'notes.txt', content: 'This is a demo text file for BeamDrop live preview.', type: 'text/plain' },
+                { name: 'sample.json', content: '{"app":"BeamDrop","status":"live"}', type: 'application/json' }
+            ];
+            demos.forEach(d => {
+                const blob = new Blob([d.content], { type: d.type });
+                ingestFileBlob(blob, d.name);
+            });
+        }
+
+        function renderFileStream() {
+            const container = document.getElementById('fileStreamContainer');
+            const filter = document.getElementById('categoryFilter').value;
+            const filtered = filter === 'all' ? state.files : state.files.filter(f => f.meta.category === filter);
+            document.getElementById('fileCounterBadge').textContent = filtered.length;
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="glass-panel rounded-3xl p-10 text-center space-y-3"><div class="w-14 h-14 mx-auto rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center text-2xl"><i class="fa-solid fa-sparkles"></i></div><h3 class="font-display font-bold text-lg text-slate-800">No files in this view</h3><p class="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">Drop files above or tap Load Demo Pack to experience instant live previews.</p></div>`;
+                return;
+            }
+            if (state.viewMode === 'grid') {
+                container.className = 'px-4 sm:px-0 pb-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4';
+                container.innerHTML = filtered.map(f => buildCompactGridCard(f)).join('');
+            } else {
+                container.className = 'px-4 sm:px-0 pb-16 space-y-6';
+                container.innerHTML = filtered.map(f => buildFlatLiveCard(f)).join('');
+            }
+        }
+
+        function buildFlatLiveCard(file) {
+            return `
+                <article class="glass-panel rounded-3xl overflow-hidden shadow-lg shadow-slate-900/5 animate-entry">
+                    <div class="px-4 sm:px-6 py-4 bg-white/80 border-b border-slate-200/70 flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <input type="checkbox" ${file.selected ? 'checked' : ''} onchange="toggleFileSelection('${file.id}')" class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                            <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-500/15 to-cyan-500/15 text-indigo-700 flex items-center justify-center text-xl shrink-0">
+                                <i class="${file.meta.icon}"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <h3 class="font-display font-bold text-base sm:text-lg text-slate-900 truncate max-w-[220px] sm:max-w-md">${escapeHtml(file.name)}</h3>
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/10 text-indigo-700">${file.meta.label}</span>
+                                </div>
+                                <div class="text-xs text-slate-500 mt-0.5">${file.sizeFormatted} • Shared by <strong class="text-slate-700">${escapeHtml(file.sender)}</strong></div>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button onclick="openModalPreview('${file.id}')" class="spring-btn px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-indigo-600 flex items-center gap-1.5 shadow-sm"><i class="fa-solid fa-eye"></i> View Preview</button>
+                            <button onclick="openModalPreviewWithRaw('${file.id}')" class="spring-btn px-3.5 py-2 rounded-xl bg-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-300 flex items-center gap-1.5 shadow-sm"><i class="fa-solid fa-code"></i> Raw Source</button>
+                            ${getActionButtonHtml(file)}
+                            <button onclick="removeFile('${file.id}')" class="spring-btn p-2.5 rounded-xl bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white" title="Delete from Session"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                    </div>
+                    <div class="px-6 py-4 bg-white/30 flex items-center justify-between text-xs text-slate-500">
+                        <span><i class="fa-solid fa-shield-halved text-emerald-600 mr-1.5"></i>Zero-Save RAM Stream Active</span>
+                        <span class="font-semibold text-slate-600">Select View or Raw Source above to inspect file contents</span>
+                    </div>
+                </article>`;
+        }
+
+        function buildCompactGridCard(file) {
+            return `
+                <div class="glass-panel rounded-3xl p-4 shadow-md hover:shadow-xl transition-all flex flex-col justify-between gap-4 animate-entry">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <input type="checkbox" ${file.selected ? 'checked' : ''} onchange="toggleFileSelection('${file.id}')" class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                            <div class="w-10 h-10 rounded-2xl bg-${file.meta.accent}-500/15 text-${file.meta.accent}-600 flex items-center justify-center text-base shrink-0"><i class="${file.meta.icon}"></i></div>
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-xs sm:text-sm text-slate-900 truncate">${escapeHtml(file.name)}</h3>
+                                <div class="text-[11px] font-medium text-slate-500">${file.meta.label} • ${file.sizeFormatted}</div>
+                            </div>
+                        </div>
+                        <button onclick="removeFile('${file.id}')" class="text-slate-400 hover:text-rose-500 p-1"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/60">
+                        <button onclick="openModalPreview('${file.id}')" class="spring-btn px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-indigo-600 flex items-center gap-1"><i class="fa-solid fa-eye"></i> View</button>
+                        <button onclick="openModalPreviewWithRaw('${file.id}')" class="spring-btn px-3 py-1.5 rounded-xl bg-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-300 flex items-center gap-1"><i class="fa-solid fa-code"></i> Raw</button>
+                        ${getActionButtonHtml(file, true)}
+                    </div>
+                </div>`;
+        }
+
+        function getActionButtonHtml(file) {
+            if (file.meta.isApk) {
+                return `<button onclick="triggerApkInstall('${file.id}')" class="spring-btn px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white text-xs font-bold shadow-md flex items-center gap-1.5"><i class="fa-brands fa-android text-sm"></i> Install APK</button>`;
+            }
+            return `<button onclick="downloadFile('${file.id}')" class="spring-btn px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-sm hover:bg-indigo-700 flex items-center gap-1.5"><i class="fa-solid fa-download"></i> Download</button>`;
+        }
+
+        function toggleFileSelection(fileId) {
+            const file = state.files.find(f => f.id === fileId);
+            if (file) file.selected = !file.selected;
+        }
+
+        function toggleSelectAll(master) {
+            const filter = document.getElementById('categoryFilter').value;
+            const filtered = filter === 'all' ? state.files : state.files.filter(f => f.meta.category === filter);
+            filtered.forEach(f => f.selected = master.checked);
+            renderFileStream();
+        }
+
+        function setViewMode(mode) {
+            state.viewMode = mode;
+            document.getElementById('viewFlatBtn').className = mode === 'flat' ? 'px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white transition-all' : 'px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition-all';
+            document.getElementById('viewGridBtn').className = mode === 'grid' ? 'px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white transition-all' : 'px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 transition-all';
+            renderFileStream();
+        }
+
+        function removeFile(id) {
+            const idx = state.files.findIndex(f => f.id === id);
+            if (idx > -1) {
+                URL.revokeObjectURL(state.files[idx].url);
+                state.files.splice(idx, 1);
+                if (db) db.ref('rooms/' + state.roomCode + '/files/' + id).remove();
+                renderFileStream();
+            }
+        }
+
+        function wipeAllFiles() {
+            state.files.forEach(f => URL.revokeObjectURL(f.url));
+            state.files = [];
+            if (db) db.ref('rooms/' + state.roomCode + '/files').remove();
+            renderFileStream();
+            showToast('Session wiped', 'success');
+        }
+
+        function downloadFile(id) {
+            const f = state.files.find(x => x.id === id);
+            if (!f) return;
+            const a = document.createElement('a');
+            a.href = f.url;
+            a.download = f.name;
+            a.click();
+        }
+
+        function downloadSelectedFiles() {
+            const selected = state.files.filter(f => f.selected);
+            if (!selected.length) return showToast('No files selected', 'error');
+            selected.forEach((f, i) => setTimeout(() => downloadFile(f.id), i * 300));
+            showToast(`Downloading ${selected.length} files`, 'success');
+        }
+
+        async function downloadAllAsZip() {
+            if (!state.files.length) return showToast('No files to zip', 'error');
+            showToast('Building ZIP...', 'info');
+            const zip = new JSZip();
+            for (const f of state.files) {
+                zip.file(f.name, await f.blob.arrayBuffer());
+            }
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `BeamDrop_${state.roomCode}.zip`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            showToast('ZIP downloaded!', 'success');
+        }
+
+        function triggerApkInstall(id) {
+            const f = state.files.find(x => x.id === id);
+            if (!f) return;
+            const a = document.createElement('a');
+            a.href = f.url;
+            a.download = f.name;
+            a.click();
+            showToast('APK download started. Open it to install on Android.', 'info');
+        }
+
+        function openModalPreview(fileId) {
+            const file = state.files.find(f => f.id === fileId);
+            if (!file) return;
+            showModalForFile(file, 'live');
+        }
+
+        function openModalPreviewWithRaw(fileId) {
+            const file = state.files.find(f => f.id === fileId);
+            if (!file) return;
+            showModalForFile(file, 'raw');
+        }
+
+        async function showModalForFile(file, mode) {
+            document.getElementById('modalFileName').textContent = file.name;
+            document.getElementById('modalFileMeta').textContent = `${file.meta.label} • ${file.sizeFormatted} • by ${file.sender}`;
+            document.getElementById('modalFileIcon').innerHTML = `<i class="${file.meta.icon}"></i>`;
+            const actionBtn = document.getElementById('modalPrimaryActionBtn');
+            if (file.meta.isApk) {
+                actionBtn.innerHTML = '<i class="fa-brands fa-android"></i> Install APK';
+                actionBtn.onclick = () => triggerApkInstall(file.id);
+            } else {
+                actionBtn.innerHTML = '<i class="fa-solid fa-download"></i> Download';
+                actionBtn.onclick = () => downloadFile(file.id);
+            }
+            const body = document.getElementById('modalBody');
+            body.innerHTML = '<div class="text-center py-10 text-slate-500">Loading preview...</div>';
+            document.getElementById('previewModal').classList.remove('hidden');
+
+            if (mode === 'raw') {
+                if (!file.textContent) {
+                    try { file.textContent = await file.blob.text(); } catch { file.textContent = '[Binary file]'; }
+                }
+                body.innerHTML = `<pre class="text-xs font-mono bg-slate-900 text-slate-100 p-4 rounded-2xl overflow-auto max-h-[60vh]">${escapeHtml(file.textContent.slice(0, 50000))}</pre>`;
+            } else {
+                body.innerHTML = await renderPreviewContent(file);
+            }
+        }
+
+        async function renderPreviewContent(file) {
+            const type = file.blob.type || '';
+            const name = file.name.toLowerCase();
+            if (type.startsWith('image/') || /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(name)) {
+                return `<img src="${file.url}" class="max-w-full max-h-[60vh] mx-auto rounded-2xl shadow-lg" alt="${escapeHtml(file.name)}">`;
+            }
+            if (type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(name)) {
+                return `<video src="${file.url}" controls class="max-w-full max-h-[60vh] mx-auto rounded-2xl"></video>`;
+            }
+            if (type.startsWith('audio/') || /\.(mp3|wav|ogg)$/i.test(name)) {
+                return `<audio src="${file.url}" controls class="w-full"></audio>`;
+            }
+            if (name.endsWith('.pdf') || type === 'application/pdf') {
+                return `<iframe src="${file.url}" class="w-full h-[60vh] rounded-2xl border"></iframe>`;
+            }
+            if (name.endsWith('.html') || name.endsWith('.htm')) {
+                return `<iframe src="${file.url}" class="w-full h-[60vh] rounded-2xl border bg-white"></iframe>`;
+            }
+            if (name.endsWith('.docx')) {
+                try {
+                    const result = await mammoth.convertToHtml({ arrayBuffer: await file.blob.arrayBuffer() });
+                    return `<div class="prose max-w-none">${result.value}</div>`;
+                } catch { return '<p>Could not preview DOCX</p>'; }
+            }
+            if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+                try {
+                    const data = await file.blob.arrayBuffer();
+                    const wb = XLSX.read(data);
+                    const html = XLSX.utils.sheet_to_html(wb.Sheets[wb.SheetNames[0]]);
+                    return `<div class="overflow-auto">${html}</div>`;
+                } catch { return '<p>Could not preview spreadsheet</p>'; }
+            }
+            if (name.endsWith('.md')) {
+                const text = await file.blob.text();
+                return `<div class="prose max-w-none">${marked.parse(text)}</div>`;
+            }
+            if (!file.textContent) {
+                try { file.textContent = await file.blob.text(); } catch { file.textContent = ''; }
+            }
+            if (file.textContent && file.textContent.length < 100000) {
+                return `<pre class="text-xs font-mono bg-slate-50 p-4 rounded-2xl overflow-auto max-h-[60vh] whitespace-pre-wrap">${escapeHtml(file.textContent)}</pre>`;
+            }
+            return `<div class="text-center py-10"><i class="fa-solid fa-file text-4xl text-slate-300 mb-3"></i><p class="text-slate-500">Preview not available for this file type. Download to open.</p></div>`;
+        }
+
+        function closePreviewModal() {
+            document.getElementById('previewModal').classList.add('hidden');
+            document.getElementById('modalBody').innerHTML = '';
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, m => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[m]));
+        }
+
+        function copyRoomCode() {
+            navigator.clipboard.writeText(state.roomCode).then(() => showToast('Code copied!', 'success'));
+        }
+
+        function copyShareUrl() {
+            const url = window.location.origin + window.location.pathname + '?room=' + state.roomCode;
+            navigator.clipboard.writeText(url).then(() => showToast('Share link copied!', 'success'));
+        }
+
+        function joinRemoteRoom() {
+            const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
+            if (!code) return showToast('Enter a code', 'error');
+            state.roomCode = code.startsWith('BEAM-') ? code : 'BEAM-' + code;
+            document.getElementById('roomCodeDisplay').textContent = state.roomCode;
+            generateQR();
+            if (db) setupFirebaseRoom();
+            showToast('Joined room ' + state.roomCode, 'success');
+            document.getElementById('joinCodeInput').value = '';
+        }
+
+        function regenerateAlias() {
+            const emojis = ['🦊','🐺','🦁','🐯','🐻','🐼','🐨','🐸','🐧','🐦'];
+            const names = ['Swift Falcon','Bold Eagle','Quick Fox','Nimble Wolf','Rapid Hawk','Agile Lion'];
+            state.alias.emoji = emojis[Math.floor(Math.random() * emojis.length)];
+            state.alias.name = names[Math.floor(Math.random() * names.length)];
+            document.getElementById('myAvatarEmoji').textContent = state.alias.emoji;
+            document.getElementById('myAliasText').textContent = state.alias.name;
+        }
+
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            const colors = { success: 'bg-emerald-600', error: 'bg-rose-600', info: 'bg-indigo-600' };
+            toast.className = `${colors[type] || colors.info} text-white px-4 py-2.5 rounded-2xl shadow-lg text-sm font-semibold animate-entry`;
+            toast.textContent = msg;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3200);
+        }
+
+        // Auto-join from URL param
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('room')) {
+            state.roomCode = urlParams.get('room').toUpperCase();
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
